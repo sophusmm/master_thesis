@@ -3,6 +3,7 @@ import pandas as pd
 from scipy import stats
 from scipy import interpolate
 from scipy.linalg import cholesky
+from typing import Union, List
 
 def CMA_separation(X, p):
     """
@@ -109,27 +110,27 @@ def compute_returns_statistics(returns_data, sector_names=None, risk_free=0):
     stats_df['Min (%)'] = returns_data.min() * 100
     stats_df['Max (%)'] = returns_data.max() * 100
     
-    # Annualized statistics (assuming weekly log returns)
-    weeks = 52  # Standard assumption for trading days in a year
-    stats_df['Ann. Return (%)'] = stats_df['Mean (%)'] * weeks
-    stats_df['Ann. Volatility (%)'] = stats_df['Std Dev (%)'] * np.sqrt(weeks)
-    stats_df['Sharpe Ratio'] = (stats_df['Ann. Return (%)'] - risk_free*100) / stats_df['Ann. Volatility (%)']
-    
     # Higher moments
     stats_df['Skewness'] = returns_data.skew()
     stats_df['Kurtosis'] = returns_data.kurtosis()
     
-    # Value at Risk (VaR) at 95% and 99% confidence levels
+    # VaR at 95%
     stats_df['VaR 95% (%)'] = returns_data.quantile(0.05) * 100
-    stats_df['VaR 99% (%)'] = returns_data.quantile(0.01) * 100
     
-    # Jarque-Bera test for normality (p-value)
-    jb_pvalues = []
+    # CVaR at 95% (Expected Shortfall)
+    cvar_values = []
     for col in returns_data.columns:
-        jb_stat, jb_pvalue = stats.jarque_bera(returns_data[col].dropna())
-        jb_pvalues.append(jb_pvalue)
-    stats_df['JB p-value'] = jb_pvalues
-    
+        var_cutoff = np.quantile(returns_data[col], 0.05)
+        cvar = returns_data[col][returns_data[col] <= var_cutoff].mean() * 100
+        cvar_values.append(cvar)
+    stats_df['CVaR 95% (%)'] = cvar_values
+
+    # Annualized statistics (assuming weekly log returns)
+    weeks = 52  # Standard assumption for trading days in a year
+    stats_df['Ann. Return (%)'] = stats_df['Mean (%)'] * weeks
+    stats_df['Ann. Volatility (%)'] = stats_df['Std Dev (%)'] * np.sqrt(weeks)
+    stats_df['Ann. Sharpe Ratio'] = (stats_df['Ann. Return (%)'] - risk_free*100) / stats_df['Ann. Volatility (%)']
+
     # Maximum drawdown
     max_drawdowns = []
     for col in returns_data.columns:
@@ -141,6 +142,14 @@ def compute_returns_statistics(returns_data, sector_names=None, risk_free=0):
         drawdown = np.exp(cum_returns - running_max) - 1
         max_drawdowns.append(drawdown.min() * 100)
     stats_df['Max Drawdown (%)'] = max_drawdowns
+
+    # Jarque-Bera test for normality (p-value)
+    jb_pvalues = []
+    for col in returns_data.columns:
+        jb_stat, jb_pvalue = stats.jarque_bera(returns_data[col].dropna())
+        jb_pvalues.append(jb_pvalue)
+    stats_df['JB p-value'] = jb_pvalues
+    
     
     return stats_df
 
@@ -288,3 +297,68 @@ def calculate_PCA(returns, n_components):
     PC = P.iloc[:, :n_components]
     
     return mean_vector, eig_values, eig_vectors, PC
+
+
+def calculate_sortino_ratio(returns, risk_free_rate=0, target_return=0):
+    """
+    Calculate the Sortino ratio for a series of investment returns.
+    
+    Parameters:
+    returns (numpy.ndarray): Array of periodic investment returns
+    risk_free_rate (float): Risk-free rate for the period (default: 0)
+    target_return (float): Minimum acceptable return (default: 0)
+    
+    Returns:
+    float: The Sortino ratio
+    """
+    # Calculate average return
+    average_return = np.mean(returns)
+    
+    # Calculate excess return
+    excess_return = average_return - risk_free_rate
+    
+    # Calculate downside returns (returns below target)
+    downside_returns = returns[returns < target_return] - target_return
+    
+    # If no downside returns, return a large value
+    if len(downside_returns) == 0:
+        return float('inf')
+    
+    # Calculate downside deviation
+    downside_deviation = np.sqrt(np.mean(np.square(downside_returns)))
+    
+    # Return Sortino ratio
+    return excess_return / downside_deviation
+
+
+def calculate_starr_ratio(returns, risk_free_rate=0, alpha=0.05):
+    """
+    Calculate the STARR (Stable Tail Adjusted Return Ratio) for a series of investment returns.
+    
+    Parameters:
+    returns (numpy.ndarray): Array of periodic investment returns
+    risk_free_rate (float): Risk-free rate for the period (default: 0)
+    confidence_level (float): Confidence level for CVaR calculation (default: 0.95)
+    
+    Returns:
+    float: The STARR ratio
+    """
+    # Calculate average return
+    average_return = np.mean(returns)
+    
+    # Calculate excess return
+    excess_return = average_return - risk_free_rate
+    
+    # Calculate VaR at the specified confidence level
+    var = np.percentile(returns, alpha)
+    
+    # Calculate CVaR (Conditional Value at Risk or Expected Shortfall)
+    # Mean of returns below VaR threshold
+    cvar = -np.mean(returns[returns <= var])
+    
+    # If CVaR is zero or negative, return a large value or handle appropriately
+    if cvar <= 0:
+        return float('inf')
+    
+    # Return STARR ratio (excess return divided by CVaR)
+    return excess_return / cvar

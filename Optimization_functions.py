@@ -31,7 +31,12 @@ def calculate_risk_parity(cov_mat: np.ndarray) -> np.ndarray:
 
 
     
-def calculate_minimum_variance(cov_mat: np.ndarray) -> np.ndarray: 
+def calculate_minimum_variance(cov_mat: np.ndarray, max_weight) -> np.ndarray: 
+    """
+    Calculates the minimum-variance portfolio with a no-shorting constraint and an optinal max_weight constraint.
+    max_weight should be expressed as a number [0, 1]
+    """
+
     
     num_assets = cov_mat.shape[0]
     
@@ -40,6 +45,7 @@ def calculate_minimum_variance(cov_mat: np.ndarray) -> np.ndarray:
 
     # define constraints 
     constraints = [cp.sum(w)==1.0, w>=0]
+    constraints.append(w <= max_weight)
 
     # define problem 
     prob = cp.Problem(cp.Minimize(w @ cov_mat @ w), constraints=constraints)
@@ -51,6 +57,50 @@ def calculate_minimum_variance(cov_mat: np.ndarray) -> np.ndarray:
     else: 
         prob.solve(solver="SCS")
         return w.value
+
+
+def calculate_tangency_portfolio(mean, cov_mat, risk_free_rate, max_weight) -> np.ndarray:
+    """
+    Calculates the tangency portfolio (maximum Sharpe ratio) with a no-shorting constraint
+    and an optional max_weight constraint.
+    max_weight should be expressed as a number [0, 1]
+    Confirmed that function gives same SR as max SR from Fortitude frontier
+    """
+    
+    num_assets = cov_mat.shape[0]
+    
+    # Use a different approach: maximize return-to-risk ratio using a change of variables
+    # The idea is to use y = w/k where k is a scalar
+    y = cp.Variable(num_assets)
+    k = cp.Variable(1, pos=True)
+    
+    # Define objective: maximize (y @ mean - k * risk_free_rate)
+    # This is equivalent to maximizing the Sharpe ratio
+    obj = cp.Maximize(y @ mean - k * risk_free_rate)
+    
+    # Define constraints
+    constraints = [
+        cp.sum(y) == k,  # Equivalent to sum(w) = 1
+        y >= 0,          # No shorting
+        y <= k * max_weight,  # Max weight constraint
+        cp.quad_form(y, cov_mat) <= 1  # Standardized risk constraint
+    ]
+    
+    # Define and solve the problem
+    prob = cp.Problem(obj, constraints)
+    try:
+        prob.solve()
+    except:
+        prob.solve(solver="SCS")
+    
+    # Check if the problem was solved successfully
+    if prob.status in ["optimal", "optimal_inaccurate"]:
+        # Convert back to weights
+        weights = y.value / k.value
+        return weights
+    else:
+        print(f"Problem status: {prob.status}")
+        return None
 
 
 def calculate_cc_ratio(weights: np.ndarray, cov_mat: np.ndarray):
