@@ -112,7 +112,7 @@ def compute_returns_statistics(returns_data, sector_names=None, risk_free=0):
     
     # Higher moments
     stats_df['Skewness'] = returns_data.skew()
-    stats_df['Kurtosis'] = returns_data.kurtosis()
+    stats_df['Excess Kurtosis'] = returns_data.kurtosis()
     
     # VaR at 95%
     stats_df['VaR 95% (%)'] = returns_data.quantile(0.05) * 100
@@ -338,7 +338,7 @@ def calculate_starr_ratio(returns, risk_free_rate=0, alpha=0.05):
     Parameters:
     returns (numpy.ndarray): Array of periodic investment returns
     risk_free_rate (float): Risk-free rate for the period (default: 0)
-    confidence_level (float): Confidence level for CVaR calculation (default: 0.95)
+    alpha (float): The CVaR percentile (default 0.05)
     
     Returns:
     float: The STARR ratio

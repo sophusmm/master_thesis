@@ -134,10 +134,11 @@ def calculate_cc_ratio(weights: np.ndarray, cov_mat: np.ndarray):
 
     return avg_std / port_std
 
-def calculate_most_diversified_portfolio(cov_mat: np.ndarray, init_weights=None) -> np.ndarray:
+def calculate_most_diversified_portfolio(cov_mat: np.ndarray, max_weight=1, init_weights=None) -> np.ndarray:
 
     """
     Implmentation of Chouefaty and Coignard most diversified portfolio
+    Finds the Maximum Diversification portfolio subject to sum(weights) = 1, weights bounds = [0, max_weight)
     """
     # define intial values
     n = cov_mat.shape[0]
@@ -149,7 +150,7 @@ def calculate_most_diversified_portfolio(cov_mat: np.ndarray, init_weights=None)
     
     # perform optimization
     res = optimize.minimize(lambda x: -calculate_cc_ratio(x, cov_mat) * 100 * 100, init_weights,
-                            constraints=[eq_constraint,], bounds=[(0, 1)]*n)
+                            constraints=[eq_constraint,], bounds=[(0, max_weight)]*n)
     
     return res.x
 
